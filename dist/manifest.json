@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "AI Optimizer Suite",
+  "version": "1.0.0",
+  "description": "Enhance ChatGPT with vector-based memory and smart file processing.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://chat.openai.com/*", "https://chatgpt.com/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chat.openai.com/*", "https://chatgpt.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["https://chat.openai.com/*", "https://chatgpt.com/*"]
+    }
+  ]
+}
