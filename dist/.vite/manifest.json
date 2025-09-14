@@ -1,0 +1,43 @@
+{
+  "../../../../../@crx/manifest": {
+    "file": "assets/crx-manifest.js-BoxkJido.js",
+    "name": "crx-manifest.js",
+    "src": "../../../../../@crx/manifest",
+    "isEntry": true
+  },
+  "content.js-loader.js": {
+    "file": "assets/content.js-loader-CmPzlvqt.js",
+    "src": "content.js-loader.js"
+  },
+  "node_modules/compressorjs/dist/compressor.esm.js": {
+    "file": "assets/compressor.esm-sbGivTO7.js",
+    "name": "compressor.esm",
+    "src": "node_modules/compressorjs/dist/compressor.esm.js",
+    "isDynamicEntry": true
+  },
+  "node_modules/pdfjs-dist/build/pdf.mjs": {
+    "file": "assets/pdf-DeRe5v7f.js",
+    "name": "pdf",
+    "src": "node_modules/pdfjs-dist/build/pdf.mjs",
+    "isDynamicEntry": true
+  },
+  "src/background.js": {
+    "file": "assets/background.js-DO3Z901D.js",
+    "name": "background.js",
+    "src": "src/background.js",
+    "isEntry": true
+  },
+  "src/content.js": {
+    "file": "assets/content.js-CJaxxf0s.js",
+    "name": "content.js",
+    "src": "src/content.js",
+    "isEntry": true,
+    "dynamicImports": [
+      "node_modules/compressorjs/dist/compressor.esm.js",
+      "node_modules/pdfjs-dist/build/pdf.mjs"
+    ],
+    "css": [
+      "assets/content-D-uci3Ep.css"
+    ]
+  }
+}

@@ -2,24 +2,56 @@
   "manifest_version": 3,
   "name": "AI Optimizer Suite",
   "version": "1.0.0",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-eval'; object-src 'self';"
+  },
   "description": "Enhance ChatGPT with vector-based memory and smart file processing.",
-  "permissions": ["storage"],
-  "host_permissions": ["https://chat.openai.com/*", "https://chatgpt.com/*"],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*"
+  ],
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "service-worker-loader.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://chat.openai.com/*", "https://chatgpt.com/*"],
-      "js": ["content.js"],
-      "css": ["styles.css"]
+      "js": [
+        "assets/content.js-loader-CmPzlvqt.js"
+      ],
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ],
+      "css": [
+        "assets/content-D-uci3Ep.css"
+      ]
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*"],
-      "matches": ["https://chat.openai.com/*", "https://chatgpt.com/*"]
+      "matches": [
+        "https://chat.openai.com/*"
+      ],
+      "resources": [
+        "pdf.worker.js"
+      ],
+      "use_dynamic_url": false
+    },
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ],
+      "resources": [
+        "assets/compressor.esm-sbGivTO7.js",
+        "assets/pdf-DeRe5v7f.js",
+        "assets/content.js-CJaxxf0s.js"
+      ],
+      "use_dynamic_url": false
     }
   ]
 }

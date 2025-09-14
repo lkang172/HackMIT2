@@ -1,79 +1,136 @@
-import Compressor from "compressorjs";
-import * as pdfjsLib from "pdfjs-dist/build/pdf.mjs";
-// =============================================================================
-// CRITICAL FIX: Tell pdf.js where to find its worker file.
-// Your bundler must be configured to copy 'pdf.worker.mjs' from 'node_modules'
-// into your 'dist' folder as 'pdf.worker.js'.
-// =============================================================================
-pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("pdf.worker.js");
+// Import CSS directly
+import "./styles.css";
 
-const PROMPT_TEXTAREA_SELECTOR =
-  'textarea[data-id="root"], textarea[placeholder*="Message"]';
+const PROMPT_TEXTAREA_SELECTOR = "#prompt-textarea";
 let isInitialized = false;
 let typingTimeout = null;
 
+// Lazy load heavy dependencies
+let Compressor = null;
+let pdfjsLib = null;
+
+async function loadCompressor() {
+  if (!Compressor) {
+    const module = await import("compressorjs");
+    Compressor = module.default;
+  }
+  return Compressor;
+}
+
+async function loadPdfJs() {
+  if (!pdfjsLib) {
+    pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      chrome.runtime.getURL("pdf.worker.js");
+  }
+  return pdfjsLib;
+}
+
+// 1. INITIALIZATION: Attaches all the event listeners when the page is ready.
 function init() {
   if (isInitialized) return;
   const textarea = document.querySelector(PROMPT_TEXTAREA_SELECTOR);
   if (textarea) {
-    console.log("AI Optimizer Suite: Initializing...");
+    console.log("✅ DEBUG: AI Optimizer Suite: Initializing...");
     textarea.addEventListener("keyup", handleTypingSearch);
     textarea.addEventListener("keydown", handleSendAndCache);
     window.addEventListener("drop", handleFileDrop, true);
     window.addEventListener("dragover", (e) => e.preventDefault(), true);
     isInitialized = true;
-    console.log("AI Optimizer Suite: Initialized successfully");
+    console.log("✅ DEBUG: AI Optimizer Suite: Initialized successfully");
   } else {
+    console.warn(
+      "🟡 DEBUG: AI Optimizer Suite: Textarea not found. Retrying in 500ms..."
+    );
     setTimeout(init, 500);
   }
 }
 
-// ... (The rest of your content.js code remains the same as the previous correct version)
-
+// 2. SEARCH TRIGGER: Called every time you type in the input box.
 async function handleTypingSearch(event) {
   clearTimeout(typingTimeout);
-  const promptText = event.target.value.trim();
-  if (promptText.length < 25) return;
+  const promptText = event.currentTarget.textContent.trim();
+
+  // This is a critical condition. The search will ONLY run if the prompt is 25+ characters.
+  if (promptText.length < 25) {
+    return;
+  }
+
+  console.log(
+    "▶️ DEBUG: Prompt is long enough. Starting 1-second timer to search..."
+  );
 
   typingTimeout = setTimeout(async () => {
     try {
+      console.log(
+        "➡️ DEBUG: Timer finished. Sending search request to background script..."
+      );
+
+      // This sends the request to your background script. The background script does the actual search.
       const result = await chrome.runtime.sendMessage({
         action: "searchCache",
         text: promptText,
       });
+
+      console.log(
+        "◀️ DEBUG: Received response from background script:",
+        result
+      );
+
       if (result && result.match) {
+        console.log("✅ DEBUG: Match found! Showing notification.");
         showMemoryNotification(result.match, result.similarity);
+      } else {
+        console.log("🟡 DEBUG: No match found or result was empty.");
       }
     } catch (error) {
-      if (error.message.includes("Receiving end does not exist")) {
+      // This catch block is very important. If it fires, there's a problem with your background script.
+      console.error(
+        "🔴 DEBUG: Error communicating with the background script!",
+        error.message || error
+      );
+      if (
+        error.message &&
+        error.message.includes("Receiving end does not exist")
+      ) {
         console.warn(
-          "AI Optimizer Suite: Could not connect to background script. It might be inactive."
+          "🔴 DEBUG: This means the background script is not running or has crashed. Check the Service Worker console."
         );
-      } else {
-        console.error("Error searching cache:", error.message);
       }
     }
   }, 1000);
 }
 
+// 3. CACHE TRIGGER: Called when you press Enter to send a prompt.
 function handleSendAndCache(event) {
   if (event.key === "Enter" && !event.shiftKey) {
-    const prompt = event.target.value.trim();
+    const prompt = event.currentTarget.textContent.trim();
     if (prompt) {
+      console.log(
+        "▶️ DEBUG: Enter pressed. Starting process to observe for a response..."
+      );
       observeForResponse(prompt);
     }
   }
 }
 
+// 4. OBSERVER: Watches the chat window for the AI's response to appear.
 function observeForResponse(prompt) {
   const chatContainer = document.querySelector("main .overflow-y-auto");
-  if (!chatContainer) return;
+  if (!chatContainer) {
+    console.error("🔴 DEBUG: Could not find chat container to observe.");
+    return;
+  }
+
+  console.log("👀 DEBUG: Observing for AI response...");
 
   const observer = new MutationObserver((mutationsList, obs) => {
     const stopGeneratingButton = document.querySelector(
       'button[aria-label="Stop generating"], button[data-testid="stop-button"]'
     );
-    if (stopGeneratingButton) return;
+    if (stopGeneratingButton) {
+      return;
+    }
 
     for (const mutation of mutationsList) {
       if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
@@ -84,6 +141,9 @@ function observeForResponse(prompt) {
               node.querySelector(".markdown")
           )
         ) {
+          console.log(
+            "✅ DEBUG: Detected a complete AI response. Preparing to cache."
+          );
           cachePromptAndAnswer(prompt);
           obs.disconnect();
           return;
@@ -94,6 +154,7 @@ function observeForResponse(prompt) {
   observer.observe(chatContainer, { childList: true, subtree: true });
 }
 
+// 5. CACHE ACTION: Sends the finished conversation to the background script to be saved.
 async function cachePromptAndAnswer(prompt) {
   try {
     const responseElements = document.querySelectorAll(".markdown");
@@ -101,19 +162,27 @@ async function cachePromptAndAnswer(prompt) {
     if (lastResponse) {
       const answerText = lastResponse.textContent || lastResponse.innerText;
       if (answerText && answerText.length > 10) {
+        console.log(
+          "➡️ DEBUG: Sending prompt and answer to background script to be cached."
+        );
         await chrome.runtime.sendMessage({
           action: "cachePrompt",
           prompt,
           answer: answerText,
         });
+        console.log("✅ DEBUG: Cache request sent successfully.");
       }
     }
   } catch (error) {
-    console.error("Error caching prompt:", error);
+    console.error(
+      "🔴 DEBUG: Error sending cache request to background script:",
+      error
+    );
   }
 }
 
 function showMemoryNotification(match, similarity) {
+  console.log("DEBUG: showMemoryNotification called with match:", match);
   const existingNotification = document.getElementById(
     "ai-optimizer-notification"
   );
@@ -167,11 +236,18 @@ function handleFileDrop(e) {
   e.preventDefault();
   e.stopPropagation();
 
+  console.log("▶️ DEBUG: File dropped onto the window.");
   const file = e.dataTransfer.files[0];
-  if (file) showFileOptionsModal(file);
+  if (file) {
+    console.log("DEBUG: File identified:", file.name);
+    showFileOptionsModal(file);
+  } else {
+    console.warn("🟡 DEBUG: A drop event occurred but no file was found.");
+  }
 }
 
 function showFileOptionsModal(file) {
+  console.log("DEBUG: Showing file options modal.");
   const existingModal = document.getElementById("file-processor-modal");
   if (existingModal) existingModal.remove();
 
@@ -211,6 +287,7 @@ function showFileOptionsModal(file) {
     const target = e.target;
     if (target.classList.contains("option-btn")) {
       const action = target.dataset.action;
+      console.log(`DEBUG: File action '${action}' selected.`);
       handleFileAction(file, action);
       modal.remove();
     } else if (target === modal) {
@@ -233,64 +310,119 @@ async function handleFileAction(file, action) {
         break;
     }
   } catch (error) {
-    console.error("Error processing file:", error);
-    showErrorNotification("Failed to process file: " + error.message);
+    console.error("🔴 DEBUG: Error processing file action:", error);
+    showErrorNotification(
+      "Failed to process file: " + (error.message || error)
+    );
   }
 }
 
-function compressImage(file) {
-  new Compressor(file, {
-    quality: 0.6,
-    maxWidth: 1920,
-    maxHeight: 1080,
-    success(result) {
-      pasteBlobIntoChat(result, `compressed-${file.name}`);
-      showSuccessNotification("Image compressed and ready to send!");
-    },
-    error(err) {
-      showErrorNotification("Failed to compress image: " + err.message);
-    },
-  });
+async function compressImage(file) {
+  console.log("DEBUG: Compressing image...");
+  try {
+    const CompressorClass = await loadCompressor();
+    return new Promise((resolve, reject) => {
+      new CompressorClass(file, {
+        quality: 0.6,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        success(result) {
+          console.log("✅ DEBUG: Image compressed successfully.");
+          pasteBlobIntoChat(result, `compressed-${file.name}`);
+          showSuccessNotification("Image compressed and ready to send!");
+          resolve(result);
+        },
+        error(err) {
+          console.error("🔴 DEBUG: Failed to compress image:", err);
+          showErrorNotification(
+            "Failed to compress image: " + (err.message || err)
+          );
+          reject(err);
+        },
+      });
+    });
+  } catch (error) {
+    console.error("🔴 DEBUG: Failed to load compressor library:", error);
+    showErrorNotification(
+      "Failed to load compressor: " + (error.message || error)
+    );
+    throw error;
+  }
 }
 
 async function extractPdfText(file) {
-  const reader = new FileReader();
-  reader.onload = async (event) => {
-    try {
-      const pdf = await pdfjsLib.getDocument({ data: event.target.result })
-        .promise;
-      let fullText = "";
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        fullText += textContent.items.map((item) => item.str).join(" ") + "\n";
-      }
-      const textarea = document.querySelector(PROMPT_TEXTAREA_SELECTOR);
-      if (textarea) {
-        textarea.value = `Extracted text from ${file.name}:\n\n${fullText}`;
-        textarea.focus();
-        showSuccessNotification("PDF text extracted and inserted!");
-      }
-    } catch (error) {
-      showErrorNotification("Failed to extract PDF text: " + error.message);
-    }
-  };
-  reader.readAsArrayBuffer(file);
+  console.log("DEBUG: Extracting PDF text...");
+  try {
+    const pdfLib = await loadPdfJs();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const pdf = await pdfLib.getDocument({ data: event.target.result })
+            .promise;
+          let fullText = "";
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            fullText +=
+              textContent.items.map((item) => item.str).join(" ") + "\n";
+          }
+          const textarea = document.querySelector(PROMPT_TEXTAREA_SELECTOR);
+          if (textarea) {
+            textarea.textContent = `Extracted text from ${file.name}:\n\n${fullText}`;
+            textarea.focus();
+            console.log(
+              "✅ DEBUG: PDF text extracted and inserted into textarea."
+            );
+            showSuccessNotification("PDF text extracted and inserted!");
+            resolve(fullText);
+          }
+        } catch (error) {
+          console.error(
+            "🔴 DEBUG: Failed during PDF text extraction process:",
+            error
+          );
+          showErrorNotification(
+            "Failed to extract PDF text: " + (error.message || error)
+          );
+          reject(error);
+        }
+      };
+      reader.onerror = () => {
+        const error = new Error("Failed to read file");
+        console.error("🔴 DEBUG: FileReader failed to read the PDF file.");
+        showErrorNotification(error.message);
+        reject(error);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  } catch (error) {
+    console.error("🔴 DEBUG: Failed to load PDF.js library:", error);
+    showErrorNotification(
+      "Failed to load PDF processor: " + (error.message || error)
+    );
+    throw error;
+  }
 }
 
 function uploadOriginalFile(file) {
+  console.log("DEBUG: Uploading original file.");
   pasteBlobIntoChat(file, file.name);
   showSuccessNotification("File ready to send!");
+  return Promise.resolve();
 }
 
 function pasteBlobIntoChat(blob, filename) {
+  console.log("DEBUG: Pasting blob into chat input:", filename);
   const dataTransfer = new DataTransfer();
   dataTransfer.items.add(new File([blob], filename, { type: blob.type }));
   const chatFileInput = document.querySelector('input[type="file"]');
   if (chatFileInput) {
     chatFileInput.files = dataTransfer.files;
     chatFileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    console.log("✅ DEBUG: Successfully dispatched file change event.");
   } else {
+    console.error("🔴 DEBUG: Could not find ChatGPT's file input element.");
     showErrorNotification("Couldn't find ChatGPT's file input.");
   }
 }
@@ -304,6 +436,7 @@ function showErrorNotification(message) {
 }
 
 function showNotification(message, type) {
+  console.log(`DEBUG: Showing notification (${type}): "${message}"`);
   const notification = document.createElement("div");
   notification.className = `ai-optimizer-toast ${type}`;
   notification.textContent = message;
@@ -335,6 +468,7 @@ let lastUrl = location.href;
 new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
+    console.log("🟡 DEBUG: URL changed, re-initializing extension.");
     lastUrl = url;
     isInitialized = false;
     setTimeout(init, 1000);

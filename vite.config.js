@@ -1,28 +1,51 @@
 import { defineConfig } from "vite";
-import { resolve } from "path";
+import { crx } from "@crxjs/vite-plugin";
+import manifest from "./manifest.js";
+import fs from "fs";
 
 export default defineConfig({
-  build: {
-    outDir: "dist",
-    rollupOptions: {
-      input: {
-        background: resolve(__dirname, "src/background.js"),
-        content: resolve(__dirname, "src/content.js"),
-        styles: resolve(__dirname, "src/styles.css"),
-      },
-      output: {
-        entryFileNames: "[name].js",
-        chunkFileNames: "[name].js",
-        assetFileNames: "[name].[ext]",
+  plugins: [
+    crx({ manifest }),
+
+    // This custom plugin will find and copy the pdf.worker.js file for you
+    {
+      name: "copy-pdf-worker",
+      generateBundle() {
+        const workerFilePath = "node_modules/pdfjs-dist/build/pdf.worker.mjs";
+        if (fs.existsSync(workerFilePath)) {
+          this.emitFile({
+            type: "asset",
+            fileName: "pdf.worker.js",
+            source: fs.readFileSync(workerFilePath, "utf-8"),
+          });
+        } else {
+          throw new Error(
+            `Could not find ${workerFilePath}. Please run 'npm install'.`
+          );
+        }
       },
     },
-    target: "es2020",
+  ],
+  build: {
+    outDir: "dist",
     minify: false,
+    rollupOptions: {
+      // Don't split chunks for Chrome extensions
+      output: {
+        manualChunks: undefined,
+      },
+    },
   },
   define: {
-    "process.env": {},
-  },
-  optimizeDeps: {
-    exclude: ["@xenova/transformers"],
+    // Define import.meta.env for content scripts
+    "import.meta.env.MODE": JSON.stringify(
+      process.env.NODE_ENV || "production"
+    ),
+    "import.meta.env.PROD": JSON.stringify(
+      process.env.NODE_ENV === "production"
+    ),
+    "import.meta.env.DEV": JSON.stringify(
+      process.env.NODE_ENV !== "production"
+    ),
   },
 });
